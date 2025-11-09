@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>香港各区疫情数据可视化大屏</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            overflow-x: hidden;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+        }
+        
+        .header h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .summary {
+            display: flex;
+            justify-content: space-around;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            margin: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .summary-item {
+            text-align: center;
+        }
+        
+        .summary-item .label {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-bottom: 5px;
+        }
+        
+        .summary-item .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .charts-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            padding: 20px;
+        }
+        
+        .chart-box {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .chart-box.full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .chart-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+        
+        .chart {
+            width: 100%;
+            height: 400px;
+        }
+        
+        .chart-large {
+            height: 500px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>香港各区疫情数据可视化大屏</h1>
+        <div id="updateTime"></div>
+    </div>
+    
+    <div class="summary" id="summary">
+        <div class="summary-item">
+            <div class="label">总新增确诊</div>
+            <div class="value" id="totalNewCases">-</div>
+        </div>
+        <div class="summary-item">
+            <div class="label">最新累计确诊</div>
+            <div class="value" id="latestTotalCases">-</div>
+        </div>
+        <div class="summary-item">
+            <div class="label">最新新增确诊</div>
+            <div class="value" id="latestNewCases">-</div>
+        </div>
+        <div class="summary-item">
+            <div class="label">数据日期范围</div>
+            <div class="value" id="dateRange" style="font-size: 16px;">-</div>
+        </div>
+    </div>
+    
+    <div class="charts-container">
+        <!-- 图表1: 每日新增确诊和累计确诊趋势（双Y轴） -->
+        <div class="chart-box full-width">
+            <div class="chart-title">每日新增确诊与累计确诊趋势</div>
+            <div id="chart1" class="chart chart-large"></div>
+        </div>
+        
+        <!-- 图表2: 各区域累计确诊排名 -->
+        <div class="chart-box">
+            <div class="chart-title">各区域累计确诊排名（Top 10）</div>
+            <div id="chart2" class="chart"></div>
+        </div>
+        
+        <!-- 图表3: 增长率变化趋势 -->
+        <div class="chart-box">
+            <div class="chart-title">增长率变化趋势</div>
+            <div id="chart3" class="chart"></div>
+        </div>
+        
+        <!-- 图表4: 各区域累计确诊占比 -->
+        <div class="chart-box">
+            <div class="chart-title">各区域累计确诊占比</div>
+            <div id="chart4" class="chart"></div>
+        </div>
+        
+        <!-- 图表5: 各区域疫情分布热力图 -->
+        <div class="chart-box full-width">
+            <div class="chart-title">各区域每日新增确诊热力图</div>
+            <div id="chart5" class="chart chart-large"></div>
+        </div>
+        
+        <!-- 图表6: 香港地区累计确诊分布地图 -->
+        <div class="chart-box full-width">
+            <div class="chart-title">香港地区累计确诊分布地图</div>
+            <div id="chart6" class="chart chart-large"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 初始化图表
+        const chart1 = echarts.init(document.getElementById('chart1'));
+        const chart2 = echarts.init(document.getElementById('chart2'));
+        const chart3 = echarts.init(document.getElementById('chart3'));
+        const chart4 = echarts.init(document.getElementById('chart4'));
+        const chart5 = echarts.init(document.getElementById('chart5'));
+        const chart6 = echarts.init(document.getElementById('chart6'));
+        
+        // 更新窗口大小时重新调整图表大小
+        window.addEventListener('resize', function() {
+            chart1.resize();
+            chart2.resize();
+            chart3.resize();
+            chart4.resize();
+            chart5.resize();
+            chart6.resize();
+        });
+        
+        // 加载汇总数据
+        async function loadSummary() {
+            try {
+                const response = await fetch('/api/summary');
+                const data = await response.json();
+                
+                document.getElementById('totalNewCases').textContent = data.total_new_cases.toLocaleString();
+                document.getElementById('latestTotalCases').textContent = data.latest_total_cases.toLocaleString();
+                document.getElementById('latestNewCases').textContent = data.latest_new_cases.toLocaleString();
+                document.getElementById('dateRange').textContent = `${data.date_range_start} 至 ${data.date_range_end}`;
+                document.getElementById('updateTime').textContent = `最后更新: ${data.latest_date}`;
+            } catch (error) {
+                console.error('加载汇总数据失败:', error);
+            }
+        }
+        
+        // 图表1: 每日新增确诊和累计确诊趋势（双Y轴）
+        async function loadChart1() {
+            try {
+                const response = await fetch('/api/daily_statistics');
+                const data = await response.json();
+                
+                const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'axis',
+                        axisPointer: {
+                            type: 'cross'
+                        }
+                    },
+                    legend: {
+                        data: ['每日新增确诊', '累计确诊'],
+                        textStyle: { color: '#fff' }
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        containLabel: true
+                    },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: data.dates,
+                        axisLabel: { color: '#fff', rotate: 45 }
+                    },
+                    yAxis: [
+                        {
+                            type: 'value',
+                            name: '新增确诊',
+                            position: 'left',
+                            axisLabel: { color: '#fff' },
+                            nameTextStyle: { color: '#fff' },
+                            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+                        },
+                        {
+                            type: 'value',
+                            name: '累计确诊',
+                            position: 'right',
+                            axisLabel: { color: '#fff' },
+                            nameTextStyle: { color: '#fff' },
+                            splitLine: { show: false }
+                        }
+                    ],
+                    series: [
+                        {
+                            name: '每日新增确诊',
+                            type: 'line',
+                            yAxisIndex: 0,
+                            data: data.new_cases,
+                            smooth: true,
+                            itemStyle: { color: '#ff6b6b' },
+                            areaStyle: { color: 'rgba(255, 107, 107, 0.3)' }
+                        },
+                        {
+                            name: '累计确诊',
+                            type: 'line',
+                            yAxisIndex: 1,
+                            data: data.total_cases,
+                            smooth: true,
+                            itemStyle: { color: '#4ecdc4' },
+                            areaStyle: { color: 'rgba(78, 205, 196, 0.3)' }
+                        }
+                    ]
+                };
+                
+                chart1.setOption(option);
+            } catch (error) {
+                console.error('加载图表1失败:', error);
+            }
+        }
+        
+        // 图表2: 各区域累计确诊排名（Top 10）
+        async function loadChart2() {
+            try {
+                const response = await fetch('/api/region_statistics');
+                const data = await response.json();
+                
+                // 取Top 10
+                const top10Regions = data.regions.slice(0, 10);
+                const top10Cases = data.cases.slice(0, 10);
+                
+                const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'shadow' }
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        containLabel: true
+                    },
+                    xAxis: {
+                        type: 'value',
+                        axisLabel: { color: '#fff' },
+                        splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+                    },
+                    yAxis: {
+                        type: 'category',
+                        data: top10Regions,
+                        axisLabel: { color: '#fff' }
+                    },
+                    series: [{
+                        type: 'bar',
+                        data: top10Cases,
+                        itemStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                { offset: 0, color: '#83bff6' },
+                                { offset: 1, color: '#188df0' }
+                            ])
+                        },
+                        label: {
+                            show: true,
+                            position: 'right',
+                            color: '#fff'
+                        }
+                    }]
+                };
+                
+                chart2.setOption(option);
+            } catch (error) {
+                console.error('加载图表2失败:', error);
+            }
+        }
+        
+        // 图表3: 增长率变化趋势
+        async function loadChart3() {
+            try {
+                const response = await fetch('/api/daily_statistics');
+                const data = await response.json();
+                
+                const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'axis',
+                        formatter: function(params) {
+                            return params[0].name + '<br/>' +
+                                   params[0].seriesName + ': ' + params[0].value + '%';
+                        }
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        containLabel: true
+                    },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: data.dates,
+                        axisLabel: { color: '#fff', rotate: 45 }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: '增长率 (%)',
+                        axisLabel: { color: '#fff', formatter: '{value}%' },
+                        nameTextStyle: { color: '#fff' },
+                        splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+                    },
+                    series: [{
+                        name: '增长率',
+                        type: 'line',
+                        data: data.growth_rates,
+                        smooth: true,
+                        itemStyle: { color: '#feca57' },
+                        areaStyle: { color: 'rgba(254, 202, 87, 0.3)' },
+                        markLine: {
+                            data: [{ type: 'average', name: '平均值' }],
+                            label: { color: '#fff' }
+                        }
+                    }]
+                };
+                
+                chart3.setOption(option);
+            } catch (error) {
+                console.error('加载图表3失败:', error);
+            }
+        }
+        
+        // 图表4: 各区域累计确诊占比
+        async function loadChart4() {
+            try {
+                const response = await fetch('/api/region_statistics');
+                const data = await response.json();
+                
+                // 准备饼图数据
+                const pieData = data.regions.map((region, index) => ({
+                    name: region,
+                    value: data.cases[index]
+                }));
+                
+                const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: '{a} <br/>{b}: {c} ({d}%)'
+                    },
+                    legend: {
+                        orient: 'vertical',
+                        left: 'left',
+                        textStyle: { color: '#fff' }
+                    },
+                    series: [{
+                        name: '累计确诊',
+                        type: 'pie',
+                        radius: ['40%', '70%'],
+                        avoidLabelOverlap: false,
+                        itemStyle: {
+                            borderRadius: 10,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        },
+                        label: {
+                            show: true,
+                            color: '#fff'
+                        },
+                        emphasis: {
+                            label: {
+                                show: true,
+                                fontSize: 16,
+                                fontWeight: 'bold'
+                            }
+                        },
+                        data: pieData
+                    }]
+                };
+                
+                chart4.setOption(option);
+            } catch (error) {
+                console.error('加载图表4失败:', error);
+            }
+        }
+        
+        // 图表5: 各区域每日新增确诊热力图
+        async function loadChart5() {
+            try {
+                const response = await fetch('/api/region_daily');
+                const data = await response.json();
+                
+                // 构建热力图数据格式 [y轴索引, x轴索引, 数值]
+                // 数据格式: [区域, 日期, 数值]
+                const heatmapData = data.data.map(item => {
+                    const regionIndex = data.regions.indexOf(item[0]);
+                    const dateIndex = data.dates.indexOf(item[1]);
+                    return [dateIndex, regionIndex, item[2]];
+                });
+                
+                const maxValue = Math.max(...data.data.map(item => item[2]), 1);
+                
+                const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        position: 'top',
+                        formatter: function(params) {
+                            const dateIndex = params.value[0];
+                            const regionIndex = params.value[1];
+                            const value = params.value[2];
+                            return data.dates[dateIndex] + '<br/>' +
+                                   data.regions[regionIndex] + ': ' + value + ' 例';
+                        }
+                    },
+                    grid: {
+                        height: '50%',
+                        top: '10%'
+                    },
+                    xAxis: {
+                        type: 'category',
+                        data: data.regions,
+                        splitArea: {
+                            show: true
+                        },
+                        axisLabel: { 
+                            color: '#fff',
+                            rotate: 45,
+                            interval: 0
+                        }
+                    },
+                    yAxis: {
+                        type: 'category',
+                        data: data.dates,
+                        splitArea: {
+                            show: true
+                        },
+                        axisLabel: { 
+                            color: '#fff',
+                            fontSize: 10
+                        }
+                    },
+                    visualMap: {
+                        min: 0,
+                        max: maxValue,
+                        calculable: true,
+                        orient: 'horizontal',
+                        left: 'center',
+                        bottom: '15%',
+                        textStyle: { color: '#fff' },
+                        inRange: {
+                            color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffcc', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
+                        }
+                    },
+                    series: [{
+                        name: '新增确诊',
+                        type: 'heatmap',
+                        data: heatmapData,
+                        label: {
+                            show: false
+                        },
+                        emphasis: {
+                            itemStyle: {
+                                shadowBlur: 10,
+                                shadowColor: 'rgba(0, 0, 0, 0.5)'
+                            }
+                        }
+                    }]
+                };
+                
+                chart5.setOption(option);
+            } catch (error) {
+                console.error('加载图表5失败:', error);
+            }
+        }
+        
+        // 图表6: 香港地区累计确诊分布地图
+        let hongkongMapRegistered = false;
+        
+        async function loadChart6() {
+            try {
+                // 先加载并注册香港地图
+                if (!hongkongMapRegistered) {
+                    const mapResponse = await fetch('/api/hongkong_map');
+                    const mapJson = await mapResponse.json();
+                    echarts.registerMap('hongkong', mapJson);
+                    hongkongMapRegistered = true;
+                }
+                
+                // 加载地图数据
+                const response = await fetch('/api/map_data');
+                const data = await response.json();
+                
+                // 准备地图数据（使用英文名称匹配地图JSON）
+                const mapData = data.data.map(item => ({
+                    name: item.name,  // 英文名称
+                    value: item.value
+                }));
+                
+                const maxValue = Math.max(...data.data.map(item => item.value));
+                
+                // 创建中文名称映射，用于tooltip显示
+                const nameMap = {};
+                data.data.forEach(item => {
+                    nameMap[item.name] = item.chineseName;
+                });
+                
+                const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: function(params) {
+                            const chineseName = nameMap[params.name] || params.name;
+                            return chineseName + '<br/>累计确诊: ' + params.value.toLocaleString() + ' 例';
+                        }
+                    },
+                    visualMap: {
+                        min: 0,
+                        max: maxValue,
+                        left: 'left',
+                        top: 'bottom',
+                        text: ['高', '低'],
+                        calculable: true,
+                        inRange: {
+                            color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffcc', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
+                        },
+                        textStyle: { color: '#fff' }
+                    },
+                    series: [
+                        {
+                            name: '累计确诊',
+                            type: 'map',
+                            map: 'hongkong',
+                            roam: true,
+                            zoom: 1.2,
+                            center: [114.17, 22.30],
+                            data: mapData,
+                            itemStyle: {
+                                borderColor: 'rgba(255, 255, 255, 0.5)',
+                                borderWidth: 1
+                            },
+                            label: {
+                                show: true,
+                                color: '#fff',
+                                fontSize: 11,
+                                fontWeight: 'bold',
+                                formatter: function(params) {
+                                    return nameMap[params.name] || params.name;
+                                }
+                            },
+                            emphasis: {
+                                label: {
+                                    show: true,
+                                    fontSize: 14,
+                                    fontWeight: 'bold',
+                                    color: '#fff'
+                                },
+                                itemStyle: {
+                                    areaColor: 'rgba(255, 255, 255, 0.3)',
+                                    borderColor: '#fff',
+                                    borderWidth: 2
+                                }
+                            }
+                        }
+                    ]
+                };
+                
+                chart6.setOption(option);
+            } catch (error) {
+                console.error('加载图表6失败:', error);
+                // 如果地图加载失败，使用简化的柱状图替代
+                loadChart6Fallback();
+            }
+        }
+        
+        // 图表6备用方案：使用简化的区域分布图
+        async function loadChart6Fallback() {
+            try {
+                const response = await fetch('/api/map_data');
+                const data = await response.json();
+                
+                // 按累计确诊数排序
+                const sortedData = data.data.sort((a, b) => b.value - a.value);
+                
+                const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'shadow' },
+                        formatter: function(params) {
+                            return params[0].name + '<br/>累计确诊: ' + params[0].value.toLocaleString() + ' 例';
+                        }
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        containLabel: true
+                    },
+                    xAxis: {
+                        type: 'category',
+                        data: sortedData.map(item => item.name),
+                        axisLabel: { 
+                            color: '#fff',
+                            rotate: 45,
+                            interval: 0
+                        }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: '累计确诊',
+                        axisLabel: { color: '#fff' },
+                        nameTextStyle: { color: '#fff' },
+                        splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+                    },
+                    series: [{
+                        name: '累计确诊',
+                        type: 'bar',
+                        data: sortedData.map(item => item.value),
+                        itemStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: '#83bff6' },
+                                { offset: 1, color: '#188df0' }
+                            ])
+                        },
+                        label: {
+                            show: true,
+                            position: 'top',
+                            color: '#fff',
+                            formatter: function(params) {
+                                return params.value.toLocaleString();
+                            }
+                        }
+                    }]
+                };
+                
+                chart6.setOption(option);
+            } catch (error) {
+                console.error('加载图表6备用方案失败:', error);
+            }
+        }
+        
+        // 加载所有数据
+        async function loadAll() {
+            await loadSummary();
+            await loadChart1();
+            await loadChart2();
+            await loadChart3();
+            await loadChart4();
+            await loadChart5();
+            await loadChart6();
+        }
+        
+        // 页面加载完成后执行
+        loadAll();
+        
+        // 每5分钟自动刷新数据
+        setInterval(loadAll, 300000);
+    </script>
+</body>
+</html>
+
